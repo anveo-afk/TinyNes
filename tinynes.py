@@ -7,9 +7,13 @@ import time
 import RPi.GPIO as GPIO
 import subprocess
 import syslog
+import re
+from enum import Enum
 
-#import pn532.pn532 as nfc
-#from pn532 import *
+
+
+import ndef
+from pn532pi import Pn532Spi
 
 
 IS_DEBUG=True
@@ -55,31 +59,90 @@ class TinyNesGameRunner:
             self.runningChild=rc
             return True
         return False
-        
+
+class NfcStatus(Enum):
+    VALID_NO_DATA=0
+    VALID_DATA=1
+    ERROR=2
+    
 class TinyNesNfcHandler:
-    def GetNdefFromNfc(self)->bytearray|None:
-        #TODO: all of it
-        #static?
-        #catch exceptions, cleanup and return None
-        #TODO: create and cleanup every time we need it to prevent power failures
-        #pn532 = PN532_SPI(cs=4, reset=20, debug=False) 
-        #uid = pn532.read_passive_target(timeout=0.5)
-        #if uid is None:
-        #    return None
-        
-        #return '9101085402656e48656c6c6f5101085402656e576f726c64' ndeflib example, text records
-        return bytearray.fromhex('d1010000021555016578616d706c652e636f6d2f70617468') #uri
     @staticmethod
-    def GetUrlFromNdef(ndef:bytearray)->str|None:
-        if ndef is None:
-            return None
-        #trim
-        #nfc but no url element log message
+    def DisposeNfc(nfc):
+        pass#sample doesn't have any cleanup code
+    @staticmethod
+    def GetNfc():
+        try:
+            PN532_SPI = Pn532Spi(Pn532Spi.SS0_GPIO8)
+            nfc = Pn532(PN532_SPI)
+            nfc.begin()
+            versiondata = nfc.getFirmwareVersion()#dbg print 
+            if versiondata is not None:
+                msg="Found chip PN5 {:#x} Firmware ver. {:d}.{:d}".format((versiondata >> 24) & 0xFF, (versiondata >> 16) & 0xFF,(versiondata >> 8) & 0xFF)
+                _dbgWrite(msg)
+                nfc.SAMConfig()
+                return nfc
+            _dbgWrite("No pn532 firmware version found")
+        except Exception as inst:
+            _logMsg(inst)
+        TinyNesNfcHandler.DisposeNfc(nfc)
         return None
+    @staticmethod
+    def ReadData()-> tuple[NfcStatus, bytearray]: 
+        rBytes=b''
+        nfc=None
+        try:
+            nfc=TinyNesNfcHandler.GetNfc()
+            tagPresent, uid = nfc.readPassiveTargetID(pn532.PN532_MIFARE_ISO14443A_106KBPS)
+            if tagPresent == False:#one more try
+                time.sleep(.1)
+                tagPresent, uid = nfc.readPassiveTargetID(pn532.PN532_MIFARE_ISO14443A_106KBPS)
+            if tagPresent == False:
+                TinyNesNfcHandler.DisposeNfc(nfc)
+                return NfcStatus.VALID_NO_DATA,b''
+            _dbgWrite(f"found tag {uid}")
+            #try to read all bytes. if this causes problems, have to implement __iter__ and __next__ to only read what's needed
+            #this code comes from what is labled as the ntag21x example, but all these function names are mifare ultralight. suspicious
+            status, buf = nfc.mifareultralight_ReadPage(3)
+            capacity = int(buf[2]) * 8
+            _dbgWrite("Tag capacity {:d} bytes".format(capacity))
+            for i in range(4, int(capacity/4)):
+                status, buf = nfc.mifareultralight_ReadPage(i)
+                rBytes.append(buf[:4])
+            TinyNesNfcHandler.DisposeNfc(nfc)
+            return NfcStatus.VALID_DATA,rBytes
+        except Exception as inst:
+            _logMsg(insg)
+            TinyNesNfcHandler.DisposeNfc(nfc)
+            return NfcStatus.ERROR,rBytes
+    @staticmethod
+    def GetUrlFromNdef(buff:bytearray)->tuple[NfcStatus, str]:
+        if buff is None:
+            return NfcStatus.ERROR,''
+        try:
+            decoder=ndef.message_decoder(buff)
+            for rec in decoder:
+                if isinstance(rec,ndef.uri.UriRecord):
+                    return NfcStatus.VALID_DATA,rec.uri
+            _logMsg("valid nfc data but no URIs") 
+            return NfcStatus.VALID_NO_DATA,''           
+        except ndef.record.DecodeError:
+            _logMsg("invalid nfc data")
+            return NfcStatus.ERROR,''
+    @staticmethod
     def GetUrlFromNfc()->str|None:
-        #static?        
-        ndef=self.GetNdefFromNfc()
-        return TinyNesNfcHandler.GetUrlFromNdef(ndef)
+        sleeptime=.1
+        triesleft=3
+        while triesleft>0:
+            status,buf=TinyNesNfcHandler.ReadData()
+            if status==NfcStatus.VALID_NO_DATA:
+                return None
+            status2,uri=TinyNesNfcHandler.GetUrlFromNdef(buf)
+            if status2==NfcStatus.VALID_NO_DATA:#retry only if there was an error
+                return None
+            if status2==NfcStatus.VALID_DATA:
+                return uri
+            triesleft=triesleft-1
+        return None
             
     
 
@@ -97,9 +160,9 @@ class TinyNesEventHandler:
         #would have to rewrite to handle snes
         if url == None or url == '':
             return (None,None)
-        urlExtractRe=re.compile("([^/?=]+)(/iframe)?$") 
-        m=urlExtractRe.match(url)
-        if m==None:
+        urlExtractRe=re.compile(r'([^/?=]+)(\/iframe)?$')# "([^/?=]+)(\/iframe)?$"
+        m=urlExtractRe.search(url)
+        if m is None:
             _logMsg(f"unable to extract rom name from url {url}")
             return (None,None)
         return ("nes",m.group(1))        
@@ -144,15 +207,29 @@ class TinyNesEventHandler:
 
 
 if __name__ == "__main__":
+    testcard=False
+    testbutton=False
+    for v in sys.argv[1:]:
+        if v == '-?' or v == '-h':
+            sys.exit("tinynes.py: -c test card reader, -b test button")
+        elif v == '-c':
+            testcard=True
+        elif v=='-b':
+            testbutton=True
+
+
     handler=TinyNesEventHandler()
 
-    #testing order:
-    handler.HookupEvent(handler.DbgWriteEventHandler)
-    #handler.HookupEvent(handler.DbgNfcEventHandler)
-
-    #real code:
-    #handler.HookupResetButtonEvent()
-    #handler.PollForFirstGame()
+    if testbutton==True:
+        handler.HookupEvent(handler.DbgWriteEventHandler)
+        print("press button, ctrl-C to exit")
+    elif testcard==True:
+        handler.HookupEvent(handler.DbgNfcEventHandler)
+        print("press button, ctrl-C to exit")
+        
+    else:
+        handler.HookupResetButtonEvent()
+        handler.PollForFirstGame()
 
 
  
