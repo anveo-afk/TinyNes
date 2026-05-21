@@ -9,6 +9,7 @@ import subprocess
 import syslog
 import re
 from enum import Enum
+from datetime import datetime
 
 
 
@@ -17,6 +18,7 @@ from pn532pi import Pn532Spi
 
 
 IS_DEBUG=True
+CONTROLLER_MACS=["AA:BB:CC:DD:EE:FF"]
 def _dbgWrite(msg:str):
     if IS_DEBUG==True:
         print(msg)
@@ -155,6 +157,7 @@ class TinyNesEventHandler:
         self.firstPollIntervalSecs=5
         self.runner=TinyNesGameRunner()        
         self.nfcHandler=TinyNesNfcHandler()
+        self.btEnableTime=None
     @staticmethod
     def ParseRomUrl(url:str):#->(system,name)
         #would have to rewrite to handle snes
@@ -178,7 +181,28 @@ class TinyNesEventHandler:
     def SetRunningGameFromUrl(self,url: str):
         romPath=self.FindRom(url)
         commandArgs= None if romPath is None else [self.fceuxCmd,romPath]
+        self.ConnectBtControllers()
         runner.SetRunningGame(commandArgs)
+    def StartBluetooth(self):
+        try:
+            args=["/bin/bash","-c","echo 'power on'|/usr/bin/bluetoothctl"]
+            self.btEnableTime=datetime.now()
+            subprocess.run(args,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        except Exception as inst:
+            _logMsg(inst)
+    def ConnectBtControllers(self):
+        try:
+            if self.btEnableTime is not None:
+                diff=(datetime.now()-self.btEnableTime).total_seconds()
+                minsecs=2
+                if diff<minsecs:
+                    time.sleep(minsecs-diff)
+            for m in CONTROLLER_MACS:
+                msg=f"connect {m}\\nquit"
+                args=["/bin/bash","-c",f"echo -e \"{msg}\"|/usr/bin/bluetoothctl"]
+                subprocess.run(args,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        except Exception as inst:
+            _logMsg(inst)
     def PollForFirstGame(self):
         while runner.startedOnce==False:
             url=self.nfcHandler.GetUrlFromNfc()
@@ -219,6 +243,7 @@ if __name__ == "__main__":
 
 
     handler=TinyNesEventHandler()
+    handler.StartBluetooth()
 
     if testbutton==True:
         handler.HookupEvent(handler.DbgWriteEventHandler)
