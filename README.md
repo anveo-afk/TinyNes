@@ -13,3 +13,6 @@
     </keybind>
 ```
 7. apt install fceux
+8. set background to nes logo or something
+9. setup mouse autohide and taskbar autohide in labwc
+10. set script to autorun at start

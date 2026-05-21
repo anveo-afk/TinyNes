@@ -18,7 +18,7 @@ from pn532pi import Pn532Spi
 
 
 IS_DEBUG=True
-CONTROLLER_MACS=["AA:BB:CC:DD:EE:FF"]
+CONTROLLER_MACS=[] #["AA:BB:CC:DD:EE:FF"]
 def _dbgWrite(msg:str):
     if IS_DEBUG==True:
         print(msg)
