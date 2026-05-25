@@ -11,15 +11,15 @@ class TinyNesTests(TestCase):
             }):
             from tinynes import TinyNesEventHandler
             url="https://retromania.gg/games/nes/battletoads"
-            system,name=TinyNesEventHandler.ParseRomUrl(url)
+            system,name=TinyNesEventHandler.parse_rom_url(url)
             self.assertEqual(system,"nes")
             self.assertEqual(name,"battletoads")
             url="https://retromania.gg/games/nes/battletoads/iframe"
-            system,name=TinyNesEventHandler.ParseRomUrl(url)
+            system,name=TinyNesEventHandler.parse_rom_url(url)
             self.assertEqual(system,"nes")
             self.assertEqual(name,"battletoads")
             url="https://somesite.com/nes/play?game=battletoads"
-            system,name=TinyNesEventHandler.ParseRomUrl(url)
+            system,name=TinyNesEventHandler.parse_rom_url(url)
             self.assertEqual(system,"nes")
             self.assertEqual(name,"battletoads")
     def test_GetUrlFromNdef(self):
