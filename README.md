@@ -11,8 +11,14 @@
         <command>systemctl poweroff</command>
       </action>
     </keybind>
+    <keybind key ="A-W-h">
+      <action name="HideCursor"/>
+    </keybind>
 ```
 7. apt install fceux
 8. set background to nes logo or something
 9. setup mouse autohide and taskbar autohide in labwc
 10. set script to autorun at start
+11. visudo to replace %sudo line with: %sudo   ALL=(ALL) NOPASSWD: ALL
+12. vi /home/nes/.config/wf-panel-pi/wf-panel-pi.ini: add autohide=true
+13. edit /home/nes/.config/labwc/autostart: add wtype -M alt -M logo -P h
