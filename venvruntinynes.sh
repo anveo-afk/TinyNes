@@ -4,11 +4,10 @@ VDIR=venv
 
 if [ ! -d "$VDIR" ] 
 then
-    python3 -m venv "$VDIR"
+    python3 -m venv --system-site-packages "$VDIR"
     . "$VDIR/bin/activate";
     pip install pn532pi
     pip install ndeflib
-    pip install RPi.GPIO
 else
     . "$VDIR/bin/activate";
 fi 

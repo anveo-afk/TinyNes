@@ -1,0 +1,3 @@
+#!/bin/bash
+
+cp $HOME/.config/wf-panel-pi/wf-panel-pi.ini.noautohide $HOME/.config/wf-panel-pi/wf-panel-pi.ini
